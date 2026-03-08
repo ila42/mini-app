@@ -3,9 +3,6 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/mini-app/',
-  server: {
-    host: true,
-    port: 5173,
-  },
+  base: '/',    // или просто удали это поле, по умолчанию '/'
 })
+
