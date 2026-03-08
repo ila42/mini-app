@@ -1,64 +1,68 @@
 import { useState, useCallback } from 'react'
+import { initCloudStorage, isTMA } from '@tma.js/sdk'
+import type { CloudStorage } from '@tma.js/sdk'
 
-// In-memory fallback for browser dev (no Telegram context)
-const memoryStore: Record<string, string> = {}
+// Lazy singleton — created once on first access inside a TMA context.
+// Falls back to localStorage when running outside Telegram (dev mode).
+let _cs: CloudStorage | null = null
 
-function cloudStorageAvailable(): boolean {
-  return !!window.Telegram?.WebApp?.CloudStorage
+function getSDKStorage(): CloudStorage | null {
+  if (_cs) return _cs
+  if (!isTMA()) return null
+  try {
+    _cs = initCloudStorage()
+    return _cs
+  } catch (e) {
+    console.warn('[storage] initCloudStorage failed, falling back to localStorage', e)
+    return null
+  }
 }
 
 export function useCloudStorage() {
-  const getItem = useCallback((key: string): Promise<string | null> => {
-    return new Promise((resolve) => {
-      if (cloudStorageAvailable()) {
-        window.Telegram!.WebApp.CloudStorage.getItem(key, (err, value) => {
-          if (err) {
-            console.error('CloudStorage.getItem error:', err)
-            resolve(null)
-          } else {
-            resolve(value || null)
-          }
-        })
-      } else {
-        // Fallback to localStorage in dev
-        const val = localStorage.getItem(key)
-        resolve(val)
+  const getItem = useCallback(async (key: string): Promise<string | null> => {
+    const cs = getSDKStorage()
+    if (cs) {
+      try {
+        const value = await cs.get(key)
+        return value || null // SDK returns '' for missing keys
+      } catch (e) {
+        console.error('[storage] get error:', e)
+        return null
       }
-    })
+    }
+    return localStorage.getItem(key)
   }, [])
 
-  const setItem = useCallback((key: string, value: string): Promise<void> => {
-    return new Promise((resolve) => {
-      if (cloudStorageAvailable()) {
-        window.Telegram!.WebApp.CloudStorage.setItem(key, value, (err) => {
-          if (err) console.error('CloudStorage.setItem error:', err)
-          resolve()
-        })
-      } else {
-        localStorage.setItem(key, value)
-        resolve()
+  const setItem = useCallback(async (key: string, value: string): Promise<void> => {
+    const cs = getSDKStorage()
+    if (cs) {
+      try {
+        await cs.set(key, value)
+      } catch (e) {
+        console.error('[storage] set error:', e)
       }
-    })
+    } else {
+      localStorage.setItem(key, value)
+    }
   }, [])
 
-  const removeItem = useCallback((key: string): Promise<void> => {
-    return new Promise((resolve) => {
-      if (cloudStorageAvailable()) {
-        window.Telegram!.WebApp.CloudStorage.removeItem(key, (err) => {
-          if (err) console.error('CloudStorage.removeItem error:', err)
-          resolve()
-        })
-      } else {
-        localStorage.removeItem(key)
-        resolve()
+  const removeItem = useCallback(async (key: string): Promise<void> => {
+    const cs = getSDKStorage()
+    if (cs) {
+      try {
+        await cs.delete(key)
+      } catch (e) {
+        console.error('[storage] delete error:', e)
       }
-    })
+    } else {
+      localStorage.removeItem(key)
+    }
   }, [])
 
   return { getItem, setItem, removeItem }
 }
 
-// Generic hook for a typed list stored as JSON under one key
+// Generic hook for a typed list stored as JSON under one key.
 export function useStoredList<T>(key: string) {
   const [items, setItems] = useState<T[]>([])
   const [loading, setLoading] = useState(true)
@@ -67,14 +71,27 @@ export function useStoredList<T>(key: string) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const raw = await getItem(key)
+      let raw = await getItem(key)
+
+      // One-time migration: if cloud storage is empty but localStorage has data,
+      // copy it over and clear the local copy.
+      if (!raw) {
+        const localData = localStorage.getItem(key)
+        if (localData) {
+          await setItem(key, localData)
+          localStorage.removeItem(key)
+          raw = localData
+          console.info(`[storage] Migrated '${key}' from localStorage → Cloud Storage`)
+        }
+      }
+
       if (raw) setItems(JSON.parse(raw))
     } catch (e) {
-      console.error('Failed to load', key, e)
+      console.error('[storage] Failed to load', key, e)
     } finally {
       setLoading(false)
     }
-  }, [key, getItem])
+  }, [key, getItem, setItem])
 
   const save = useCallback(async (next: T[]) => {
     setItems(next)

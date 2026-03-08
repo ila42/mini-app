@@ -23,5 +23,7 @@ export function useCategories() {
     await save(categories.filter(c => c.id !== id))
   }, [categories, save])
 
-  return { categories, loading, addCategory, updateCategory, deleteCategory, reload: load }
+  // `save` is exposed so callers (e.g. App.tsx) can batch-write categories
+  // directly, e.g. for seeding defaults on first run.
+  return { categories, loading, addCategory, updateCategory, deleteCategory, reload: load, save }
 }

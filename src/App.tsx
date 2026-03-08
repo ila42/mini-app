@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { Tab } from './types'
 import { useCategories } from './hooks/useCategories'
 import { useExpenses } from './hooks/useExpenses'
+import { useCloudStorage } from './hooks/useCloudStorage'
 import BottomNav from './components/BottomNav'
 import ExpensesPage from './pages/ExpensesPage'
 import CategoriesPage from './pages/CategoriesPage'
@@ -18,20 +19,22 @@ const DEFAULT_CATEGORIES = [
 export default function App() {
   const [tab, setTab] = useState<Tab>('expenses')
 
-  const { categories, loading: catsLoading, addCategory, updateCategory, deleteCategory, reload: reloadCats } = useCategories()
+  const { getItem, setItem } = useCloudStorage()
+  const { categories, loading: catsLoading, addCategory, updateCategory, deleteCategory, reload: reloadCats, save: saveCategories } = useCategories()
   const { expenses, loading: expLoading, addExpense, deleteExpense } = useExpenses()
 
-  // Seed default categories on first run
+  // Seed default categories on first run.
+  // Uses Cloud Storage (via saveCategories / setItem) so data persists in Telegram.
   useEffect(() => {
-    if (!catsLoading && categories.length === 0) {
-      const seeded = localStorage.getItem('cats_seeded')
+    if (catsLoading || categories.length > 0) return
+    ;(async () => {
+      const seeded = await getItem('cats_seeded')
       if (!seeded) {
-        localStorage.setItem('categories', JSON.stringify(DEFAULT_CATEGORIES))
-        localStorage.setItem('cats_seeded', '1')
-        reloadCats()
+        await saveCategories(DEFAULT_CATEGORIES)
+        await setItem('cats_seeded', '1')
       }
-    }
-  }, [catsLoading, categories.length, reloadCats])
+    })()
+  }, [catsLoading, categories.length, getItem, setItem, saveCategories])
 
   return (
     <div className="flex flex-col min-h-screen" style={{ backgroundColor: 'var(--tg-theme-bg-color)' }}>
