@@ -9,14 +9,19 @@ export function useCategories() {
     load()
   }, [])
 
-  const addCategory = useCallback(async (cat: Omit<Category, 'id'>) => {
-    const next = [...categories, { ...cat, id: Date.now().toString() }]
-    await save(next)
+  const addCategory = useCallback(async (cat: Omit<Category, 'id'>): Promise<Category> => {
+    const newCat: Category = { ...cat, id: Date.now().toString() }
+    await save([...categories, newCat])
+    return newCat
+  }, [categories, save])
+
+  const updateCategory = useCallback(async (id: string, updates: Partial<Omit<Category, 'id'>>) => {
+    await save(categories.map(c => c.id === id ? { ...c, ...updates } : c))
   }, [categories, save])
 
   const deleteCategory = useCallback(async (id: string) => {
     await save(categories.filter(c => c.id !== id))
   }, [categories, save])
 
-  return { categories, loading, addCategory, deleteCategory, reload: load }
+  return { categories, loading, addCategory, updateCategory, deleteCategory, reload: load }
 }

@@ -22,4 +22,4 @@ export type ShoppingItem = {
   addedAt: string
 }
 
-export type Tab = 'expenses' | 'shopping' | 'categories' | 'stats'
+export type Tab = 'expenses' | 'categories' | 'stats'

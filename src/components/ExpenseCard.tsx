@@ -30,7 +30,7 @@ export default function ExpenseCard({ expense, category, onDelete }: Props) {
       </div>
       <div className="flex flex-col items-end gap-1">
         <span className="font-bold text-base" style={{ color: 'var(--tg-theme-text-color)' }}>
-          ${expense.amount.toFixed(2)}
+          {expense.amount.toFixed(2)} ₽
         </span>
         <button
           onClick={() => onDelete(expense.id)}

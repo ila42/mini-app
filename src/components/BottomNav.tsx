@@ -7,7 +7,6 @@ interface Props {
 
 const tabs: { id: Tab; label: string; icon: string }[] = [
   { id: 'expenses', label: 'Расходы', icon: '💸' },
-  { id: 'shopping', label: 'Покупки', icon: '🛒' },
   { id: 'categories', label: 'Категории', icon: '🏷️' },
   { id: 'stats', label: 'Статистика', icon: '📊' },
 ]

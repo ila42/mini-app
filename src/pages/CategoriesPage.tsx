@@ -4,7 +4,8 @@ import Modal from '../components/Modal'
 
 interface Props {
   categories: Category[]
-  onAdd: (cat: Omit<Category, 'id'>) => Promise<void>
+  onAdd: (cat: Omit<Category, 'id'>) => Promise<Category>
+  onUpdate: (id: string, updates: Partial<Omit<Category, 'id'>>) => Promise<void>
   onDelete: (id: string) => Promise<void>
 }
 
@@ -19,20 +20,110 @@ const PRESET_EMOJIS = [
   '📚', '🎵', '💼', '🏋️', '🍕', '☕', '🐾', '💡',
 ]
 
-export default function CategoriesPage({ categories, onAdd, onDelete }: Props) {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [color, setColor] = useState(PRESET_COLORS[0])
-  const [emoji, setEmoji] = useState(PRESET_EMOJIS[0])
+type FormState = { name: string; color: string; emoji: string }
+
+function CategoryForm({
+  initial,
+  onSubmit,
+  submitLabel,
+}: {
+  initial: FormState
+  onSubmit: (values: FormState) => Promise<void>
+  submitLabel: string
+}) {
+  const [name, setName] = useState(initial.name)
+  const [color, setColor] = useState(initial.color)
+  const [emoji, setEmoji] = useState(initial.emoji)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
-    await onAdd({ name: name.trim(), color, emoji })
-    setName('')
-    setColor(PRESET_COLORS[0])
-    setEmoji(PRESET_EMOJIS[0])
-    setOpen(false)
+    await onSubmit({ name: name.trim(), color, emoji })
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <div>
+        <label className="block text-sm mb-1 font-medium" style={{ color: 'var(--tg-theme-hint-color)' }}>
+          Название *
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="Название категории"
+          required
+          className="w-full rounded-xl px-3 py-2.5 text-base outline-none"
+          style={{ backgroundColor: 'var(--tg-theme-secondary-bg-color)', color: 'var(--tg-theme-text-color)' }}
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm mb-2 font-medium" style={{ color: 'var(--tg-theme-hint-color)' }}>
+          Эмодзи
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {PRESET_EMOJIS.map(e => (
+            <button
+              key={e}
+              type="button"
+              onClick={() => setEmoji(e)}
+              className="w-10 h-10 rounded-xl text-xl flex items-center justify-center"
+              style={{
+                backgroundColor: emoji === e ? 'var(--tg-theme-button-color)' : 'var(--tg-theme-secondary-bg-color)',
+              }}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm mb-2 font-medium" style={{ color: 'var(--tg-theme-hint-color)' }}>
+          Цвет
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {PRESET_COLORS.map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setColor(c)}
+              className="w-8 h-8 rounded-full"
+              style={{
+                backgroundColor: c,
+                outline: color === c ? `3px solid ${c}` : 'none',
+                outlineOffset: '2px',
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        className="w-full py-3 rounded-xl font-semibold"
+        style={{ backgroundColor: 'var(--tg-theme-button-color)', color: 'var(--tg-theme-button-text-color)' }}
+      >
+        {submitLabel}
+      </button>
+    </form>
+  )
+}
+
+export default function CategoriesPage({ categories, onAdd, onUpdate, onDelete }: Props) {
+  const [addOpen, setAddOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState<Category | null>(null)
+
+  const handleAdd = async (values: FormState) => {
+    await onAdd(values)
+    setAddOpen(false)
+  }
+
+  const handleEdit = async (values: FormState) => {
+    if (!editTarget) return
+    await onUpdate(editTarget.id, values)
+    setEditTarget(null)
   }
 
   return (
@@ -43,7 +134,7 @@ export default function CategoriesPage({ categories, onAdd, onDelete }: Props) {
             Категории
           </h1>
           <button
-            onClick={() => setOpen(true)}
+            onClick={() => setAddOpen(true)}
             className="w-9 h-9 rounded-full flex items-center justify-center text-xl font-bold"
             style={{ backgroundColor: 'var(--tg-theme-button-color)', color: 'var(--tg-theme-button-text-color)' }}
           >
@@ -71,92 +162,49 @@ export default function CategoriesPage({ categories, onAdd, onDelete }: Props) {
               >
                 {cat.emoji}
               </div>
-              <div className="flex-1">
-                <p className="font-medium" style={{ color: 'var(--tg-theme-text-color)' }}>{cat.name}</p>
-                <div
-                  className="w-3 h-3 rounded-full mt-1 inline-block"
-                  style={{ backgroundColor: cat.color }}
-                />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate" style={{ color: 'var(--tg-theme-text-color)' }}>{cat.name}</p>
+                <div className="w-3 h-3 rounded-full mt-1 inline-block" style={{ backgroundColor: cat.color }} />
               </div>
-              <button
-                onClick={() => onDelete(cat.id)}
-                className="text-sm px-2 py-1 rounded-lg"
-                style={{ color: '#ef4444', backgroundColor: '#ef444422' }}
-              >
-                Удалить
-              </button>
+              <div className="flex gap-2 flex-shrink-0">
+                <button
+                  onClick={() => setEditTarget(cat)}
+                  className="text-sm px-2 py-1 rounded-lg"
+                  style={{ color: 'var(--tg-theme-button-color)', backgroundColor: 'var(--tg-theme-button-color)' + '22' }}
+                >
+                  Изменить
+                </button>
+                <button
+                  onClick={() => onDelete(cat.id)}
+                  className="text-sm px-2 py-1 rounded-lg"
+                  style={{ color: '#ef4444', backgroundColor: '#ef444422' }}
+                >
+                  Удалить
+                </button>
+              </div>
             </div>
           ))
         )}
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Новая категория">
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div>
-            <label className="block text-sm mb-1 font-medium" style={{ color: 'var(--tg-theme-hint-color)' }}>
-              Название *
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Название категории"
-              required
-              className="w-full rounded-xl px-3 py-2.5 text-base outline-none"
-              style={{ backgroundColor: 'var(--tg-theme-secondary-bg-color)', color: 'var(--tg-theme-text-color)' }}
-            />
-          </div>
+      {/* Add modal */}
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Новая категория">
+        <CategoryForm
+          initial={{ name: '', color: PRESET_COLORS[0], emoji: PRESET_EMOJIS[0] }}
+          onSubmit={handleAdd}
+          submitLabel="Создать категорию"
+        />
+      </Modal>
 
-          <div>
-            <label className="block text-sm mb-2 font-medium" style={{ color: 'var(--tg-theme-hint-color)' }}>
-              Эмодзи
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {PRESET_EMOJIS.map(e => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => setEmoji(e)}
-                  className="w-10 h-10 rounded-xl text-xl flex items-center justify-center transition-all"
-                  style={{
-                    backgroundColor: emoji === e ? 'var(--tg-theme-button-color)' : 'var(--tg-theme-secondary-bg-color)',
-                  }}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm mb-2 font-medium" style={{ color: 'var(--tg-theme-hint-color)' }}>
-              Цвет
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {PRESET_COLORS.map(c => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className="w-8 h-8 rounded-full transition-all"
-                  style={{
-                    backgroundColor: c,
-                    outline: color === c ? `3px solid ${c}` : 'none',
-                    outlineOffset: '2px',
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            className="w-full py-3 rounded-xl font-semibold"
-            style={{ backgroundColor: 'var(--tg-theme-button-color)', color: 'var(--tg-theme-button-text-color)' }}
-          >
-            Создать категорию
-          </button>
-        </form>
+      {/* Edit modal */}
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Редактировать категорию">
+        {editTarget && (
+          <CategoryForm
+            initial={{ name: editTarget.name, color: editTarget.color, emoji: editTarget.emoji }}
+            onSubmit={handleEdit}
+            submitLabel="Сохранить"
+          />
+        )}
       </Modal>
     </div>
   )

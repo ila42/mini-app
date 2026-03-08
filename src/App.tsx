@@ -4,7 +4,6 @@ import { useCategories } from './hooks/useCategories'
 import { useExpenses } from './hooks/useExpenses'
 import BottomNav from './components/BottomNav'
 import ExpensesPage from './pages/ExpensesPage'
-import ShoppingPage from './pages/ShoppingPage'
 import CategoriesPage from './pages/CategoriesPage'
 import StatsPage from './pages/StatsPage'
 
@@ -19,7 +18,7 @@ const DEFAULT_CATEGORIES = [
 export default function App() {
   const [tab, setTab] = useState<Tab>('expenses')
 
-  const { categories, loading: catsLoading, addCategory, deleteCategory, reload: reloadCats } = useCategories()
+  const { categories, loading: catsLoading, addCategory, updateCategory, deleteCategory, reload: reloadCats } = useCategories()
   const { expenses, loading: expLoading, addExpense, deleteExpense } = useExpenses()
 
   // Seed default categories on first run
@@ -44,13 +43,14 @@ export default function App() {
             loading={expLoading}
             onAdd={addExpense}
             onDelete={deleteExpense}
+            onAddCategory={addCategory}
           />
         )}
-        {tab === 'shopping' && <ShoppingPage categories={categories} />}
         {tab === 'categories' && (
           <CategoriesPage
             categories={categories}
             onAdd={addCategory}
+            onUpdate={updateCategory}
             onDelete={deleteCategory}
           />
         )}
