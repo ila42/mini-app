@@ -1,0 +1,20 @@
+# Finance AI Bot — dependencies
+# Install with: py -m pip install -r requirements_finance.txt
+
+# Telegram bot framework
+aiogram==3.13.1
+
+# Async SQLite
+aiosqlite==0.20.0
+
+# OpenAI SDK (Whisper + GPT-4o-mini Vision)
+openai>=1.30.0
+
+# Audio conversion (requires ffmpeg in PATH)
+pydub==0.25.1
+
+# Data validation
+pydantic>=2.6.0
+
+# .env file support
+python-dotenv>=1.0.0
