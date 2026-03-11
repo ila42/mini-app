@@ -2,15 +2,16 @@
 finance_bot.py — aiogram 3.x entry point for the AI-analyst bot.
 
 Handlers:
-  /start            — welcome + upsert user
+  /start            — welcome message
   /history          — last 10 expenses
-  /summary          — totals by category
-  message.voice     — voice message processing
-  message.text      — plain text expense entry
-  message.photo     — receipt photo processing
+  /summary          — all-time totals by category
+  /stats            — current-month spending total
+  message.voice     — voice message → Whisper → GPT → Supabase
+  message.text      — plain text → GPT → Supabase
+  message.photo     — receipt photo → GPT Vision → Supabase
 
 Run:
-    BOT_TOKEN=... OPENAI_API_KEY=... py finance_bot.py
+    BOT_TOKEN=... OPENAI_API_KEY=... SUPABASE_URL=... SUPABASE_KEY=... py finance_bot.py
 """
 
 import asyncio
@@ -45,21 +46,17 @@ dp = Dispatcher()
 # ─────────────────────────────────────────────
 
 def _format_confirmation(data: ExpenseData) -> str:
-    items_line = ", ".join(data.items) if data.items else "—"
+    desc = data.description or "—"
     return (
-        "Трата сохранена!\n\n"
-        f"Сумма:     {data.amount:.2f} руб.\n"
-        f"Категория: {data.category}\n"
-        f"Позиции:   {items_line}\n"
-        f"Дата:      {data.date}"
+        f"✅ Записал {data.amount:.0f}₽ в категорию «{data.category}»\n\n"
+        f"Описание: {desc}\n"
+        f"Дата:     {data.date}"
     )
 
 
 async def _save_and_confirm(message: Message, data: ExpenseData) -> None:
-    """Persist validated expense and reply with confirmation."""
     user_id = message.from_user.id
-    await db.upsert_user(user_id, message.from_user.username)
-    await db.add_expense(user_id, data.model_dump())
+    await db.save_expense(user_id, data.model_dump())
     await message.answer(_format_confirmation(data))
 
 
@@ -69,16 +66,17 @@ async def _save_and_confirm(message: Message, data: ExpenseData) -> None:
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    await db.upsert_user(message.from_user.id, message.from_user.username)
     await message.answer(
         "Привет! Я твой финансовый ассистент.\n\n"
         "Отправь мне:\n"
-        "  • Голосовое сообщение с описанием траты\n"
-        "  • Текст: «Купил продукты на 1500 рублей»\n"
-        "  • Фото чека или квитанции\n\n"
+        "  • Голосовое сообщение — «Купил продукты на 1500»\n"
+        "  • Текст — «Такси 350 рублей вчера»\n"
+        "  • Фото чека\n\n"
+        "Категории: Еда, Транспорт, Покупки, Здоровье, Подписки, Саша, Перевод другим.\n\n"
         "Команды:\n"
         "  /history — последние 10 трат\n"
-        "  /summary — сводка по категориям"
+        "  /summary — сводка по категориям\n"
+        "  /stats   — итог за текущий месяц"
     )
 
 
@@ -88,16 +86,17 @@ async def cmd_start(message: Message) -> None:
 
 @dp.message(Command("history"))
 async def cmd_history(message: Message) -> None:
-    rows = await db.get_user_expenses(message.from_user.id)
+    rows = await db.get_user_expenses(message.from_user.id, limit=10)
     if not rows:
         await message.answer("У тебя пока нет записей о тратах.")
         return
 
-    lines = ["Последние траты:\n"]
-    for r in rows[:10]:
+    lines = ["Последние 10 трат:\n"]
+    for r in rows:
+        desc = r.get("description") or "—"
         lines.append(
-            f"{r['date']}  |  {r['amount']:.2f} руб.  |  {r['category']}\n"
-            f"  {r['items']}"
+            f"{r['expense_date']}  {r['amount']:.0f}₽  [{r['category']}]\n"
+            f"  {desc}"
         )
     await message.answer("\n\n".join(lines))
 
@@ -113,12 +112,28 @@ async def cmd_summary(message: Message) -> None:
         await message.answer("Данных пока нет.")
         return
 
-    lines = [f"Всего потрачено: {summary['total']:.2f} руб.\n\nПо категориям:"]
+    lines = [f"Всего потрачено: {summary['total']:.0f}₽\n\nПо категориям:"]
     for cat, amount in summary["by_category"].items():
         pct = amount / summary["total"] * 100
-        lines.append(f"  {cat}: {amount:.2f} руб. ({pct:.1f}%)")
+        lines.append(f"  {cat}: {amount:.0f}₽ ({pct:.1f}%)")
 
     await message.answer("\n".join(lines))
+
+
+# ─────────────────────────────────────────────
+#  /stats — current month
+# ─────────────────────────────────────────────
+
+@dp.message(Command("stats"))
+async def cmd_stats(message: Message) -> None:
+    year, month = 2026, 3
+    total = await db.get_monthly_total(message.from_user.id, year, month)
+    if total == 0:
+        await message.answer("В марте 2026 трат пока нет.")
+    else:
+        await message.answer(
+            f"📊 Март 2026:\n\nИтого потрачено: {total:.0f}₽"
+        )
 
 
 # ─────────────────────────────────────────────
@@ -127,7 +142,7 @@ async def cmd_summary(message: Message) -> None:
 
 @dp.message(F.voice)
 async def handle_voice(message: Message) -> None:
-    status = await message.answer("Обрабатываю голосовое сообщение...")
+    status = await message.answer("🎤 Обрабатываю голосовое сообщение...")
     try:
         file = await bot.get_file(message.voice.file_id)
         ogg_bytes = await bot.download_file(file.file_path)
@@ -136,7 +151,7 @@ async def handle_voice(message: Message) -> None:
         await _save_and_confirm(message, data)
     except Exception as exc:
         logger.exception("Voice processing failed")
-        await status.edit_text(f"Не удалось обработать голосовое сообщение: {exc}")
+        await status.edit_text(f"Не удалось обработать голосовое: {exc}")
 
 
 # ─────────────────────────────────────────────
@@ -146,10 +161,10 @@ async def handle_voice(message: Message) -> None:
 @dp.message(F.text)
 async def handle_text(message: Message) -> None:
     text = message.text or ""
-    if text.startswith("/"):  # skip commands
+    if text.startswith("/"):
         return
 
-    status = await message.answer("Анализирую текст...")
+    status = await message.answer("💬 Анализирую...")
     try:
         data = await ai.process_text(text)
         await status.delete()
@@ -165,10 +180,9 @@ async def handle_text(message: Message) -> None:
 
 @dp.message(F.photo)
 async def handle_photo(message: Message) -> None:
-    status = await message.answer("Анализирую фото чека...")
+    status = await message.answer("🧾 Анализирую фото чека...")
     try:
-        # Use the highest-resolution version of the photo.
-        photo = message.photo[-1]
+        photo = message.photo[-1]  # highest resolution
         file = await bot.get_file(photo.file_id)
         img_bytes = await bot.download_file(file.file_path)
         data = await ai.process_photo(img_bytes.read())
@@ -184,7 +198,6 @@ async def handle_photo(message: Message) -> None:
 # ─────────────────────────────────────────────
 
 async def main() -> None:
-    await db.init_db()
     logger.info("Starting finance bot polling...")
     await dp.start_polling(bot)
 

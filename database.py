@@ -1,153 +1,118 @@
 """
-database.py — Async SQLite layer via aiosqlite.
-Tables: users, expenses.
+database.py — Supabase layer.
+
+Table: expenses
+Columns: user_id (bigint), amount (float), category (text),
+         description (text), expense_date (date)
 """
 
 import logging
-from datetime import datetime
-from typing import Optional
+import os
+from datetime import date
 
-import aiosqlite
+from dotenv import load_dotenv
+from supabase import acreate_client, AsyncClient
 
-DB_PATH = "finance_bot.db"
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
-
-# ─────────────────────────────────────────────
-#  Schema
-# ─────────────────────────────────────────────
-
-CREATE_USERS_SQL = """
-CREATE TABLE IF NOT EXISTS users (
-    id       INTEGER PRIMARY KEY,   -- Telegram user_id
-    username TEXT
-);
-"""
-
-CREATE_EXPENSES_SQL = """
-CREATE TABLE IF NOT EXISTS expenses (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id    BIGINT  NOT NULL,
-    amount     REAL    NOT NULL,
-    category   TEXT    NOT NULL,
-    items      TEXT    NOT NULL,   -- comma-separated list
-    date       TEXT    NOT NULL,   -- ISO-8601 string
-    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-"""
+_client: AsyncClient | None = None
 
 
-# ─────────────────────────────────────────────
-#  Initialisation
-# ─────────────────────────────────────────────
-
-async def init_db() -> None:
-    """Create all tables if they don't exist yet."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(CREATE_USERS_SQL)
-        await db.execute(CREATE_EXPENSES_SQL)
-        await db.commit()
-    logger.info("Database initialised at %s", DB_PATH)
-
-
-# ─────────────────────────────────────────────
-#  Users
-# ─────────────────────────────────────────────
-
-async def upsert_user(user_id: int, username: Optional[str]) -> None:
-    """Insert or ignore user record."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO users (id, username) VALUES (?, ?)",
-            (user_id, username or ""),
-        )
-        # Update username in case it changed.
-        await db.execute(
-            "UPDATE users SET username = ? WHERE id = ?",
-            (username or "", user_id),
-        )
-        await db.commit()
+async def _get_client() -> AsyncClient:
+    """Lazy singleton for the Supabase async client."""
+    global _client
+    if _client is None:
+        url = os.environ["SUPABASE_URL"]
+        key = os.environ["SUPABASE_KEY"]
+        _client = await acreate_client(url, key)
+        logger.info("Supabase client initialised.")
+    return _client
 
 
 # ─────────────────────────────────────────────
 #  Expenses
 # ─────────────────────────────────────────────
 
-async def add_expense(user_id: int, data: dict) -> int:
+async def save_expense(user_id: int, data: dict) -> None:
     """
-    Persist a single expense record.
+    Insert a single expense row into Supabase.
 
     Expected keys in *data*:
-        amount   : float
-        category : str
-        items    : list[str]
-        date     : str  (ISO-8601 or human-readable)
-
-    Returns the new row id.
+        amount      : float
+        category    : str
+        description : str
+        date        : str  (YYYY-MM-DD)
     """
-    items_str = ", ".join(data["items"]) if isinstance(data["items"], list) else str(data["items"])
-    date_str = data.get("date") or datetime.utcnow().isoformat()
+    expense_date = data.get("date") or date.today().isoformat()
+    if len(expense_date) > 10:
+        expense_date = expense_date[:10]
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            """
-            INSERT INTO expenses (user_id, amount, category, items, date)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (user_id, float(data["amount"]), data["category"], items_str, date_str),
+    client = await _get_client()
+    await (
+        client.table("expenses")
+        .insert(
+            {
+                "user_id": user_id,
+                "amount": float(data["amount"]),
+                "category": data["category"],
+                "description": data.get("description", ""),
+                "expense_date": expense_date,
+            }
         )
-        await db.commit()
-        row_id = cursor.lastrowid
+        .execute()
+    )
+    logger.info(
+        "Saved expense  user=%s  amount=%.2f  category=%s  date=%s",
+        user_id,
+        data["amount"],
+        data["category"],
+        expense_date,
+    )
 
-    logger.info("Saved expense id=%s for user_id=%s  amount=%.2f  category=%s",
-                row_id, user_id, data["amount"], data["category"])
-    return row_id
 
-
-async def get_user_expenses(user_id: int) -> list[dict]:
-    """Return all expenses for a given user, newest first."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            """
-            SELECT id, amount, category, items, date, created_at
-            FROM expenses
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            """,
-            (user_id,),
-        )
-        rows = await cursor.fetchall()
-
-    return [dict(row) for row in rows]
+async def get_user_expenses(user_id: int, limit: int = 10) -> list[dict]:
+    """Return the most recent *limit* expenses for a user."""
+    client = await _get_client()
+    response = (
+        await client.table("expenses")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("expense_date", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return response.data or []
 
 
 async def get_expense_summary(user_id: int) -> dict:
-    """
-    Quick summary: total spent and per-category breakdown.
-    """
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+    """Total spent and per-category breakdown (all time)."""
+    rows = await get_user_expenses(user_id, limit=1000)
+    if not rows:
+        return {"total": 0.0, "by_category": {}}
 
-        total_cur = await db.execute(
-            "SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id = ?",
-            (user_id,),
-        )
-        total_row = await total_cur.fetchone()
+    total = sum(r["amount"] for r in rows)
+    by_category: dict[str, float] = {}
+    for r in rows:
+        by_category[r["category"]] = by_category.get(r["category"], 0.0) + r["amount"]
 
-        cat_cur = await db.execute(
-            """
-            SELECT category, SUM(amount) AS subtotal
-            FROM expenses
-            WHERE user_id = ?
-            GROUP BY category
-            ORDER BY subtotal DESC
-            """,
-            (user_id,),
-        )
-        cat_rows = await cat_cur.fetchall()
+    by_category = dict(sorted(by_category.items(), key=lambda x: x[1], reverse=True))
+    return {"total": total, "by_category": by_category}
 
-    return {
-        "total": total_row["total"],
-        "by_category": {row["category"]: row["subtotal"] for row in cat_rows},
-    }
+
+async def get_monthly_total(user_id: int, year: int, month: int) -> float:
+    """Sum of expenses for a given calendar month."""
+    start = f"{year}-{month:02d}-01"
+    end = f"{year + 1}-01-01" if month == 12 else f"{year}-{month + 1:02d}-01"
+
+    client = await _get_client()
+    response = (
+        await client.table("expenses")
+        .select("amount")
+        .eq("user_id", user_id)
+        .gte("expense_date", start)
+        .lt("expense_date", end)
+        .execute()
+    )
+    return sum(r["amount"] for r in (response.data or []))
