@@ -41,7 +41,8 @@ export function useSupabaseExpenses(categories: Category[]) {
   const userId = useMemo(() => getTelegramUserId(), [])
 
   const fetchExpenses = useCallback(async () => {
-    if (!userId) {
+    if (!userId || !supabase) {
+      if (!supabase) console.warn('[supabase] client is null — check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env')
       setLoading(false)
       return
     }
@@ -67,7 +68,7 @@ export function useSupabaseExpenses(categories: Category[]) {
 
   // Realtime — live updates when the bot adds an expense
   useEffect(() => {
-    if (!userId) return
+    if (!userId || !supabase) return
 
     const channel = supabase
       .channel(`expenses:user:${userId}`)
@@ -102,7 +103,7 @@ export function useSupabaseExpenses(categories: Category[]) {
       .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      supabase?.removeChannel(channel)
     }
   }, [userId])
 
@@ -113,7 +114,7 @@ export function useSupabaseExpenses(categories: Category[]) {
   )
 
   const addExpense = useCallback(async (expense: Omit<Expense, 'id'>) => {
-    if (!userId) return
+    if (!userId || !supabase) return
     const catName = categoriesRef.current.find(c => c.id === expense.categoryId)?.name ?? 'Другое'
     const { error } = await supabase.from('expenses').insert({
       user_id: userId,
@@ -127,6 +128,7 @@ export function useSupabaseExpenses(categories: Category[]) {
   }, [userId])
 
   const deleteExpense = useCallback(async (id: string) => {
+    if (!supabase) return
     // Optimistic UI — remove immediately
     setRawRows(prev => prev.filter(r => String(r.id) !== id))
     const { error } = await supabase.from('expenses').delete().eq('id', id)
