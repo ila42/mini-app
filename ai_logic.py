@@ -33,6 +33,7 @@ KNOWN_CATEGORIES = [
     "Подписки",
     "Саша",
     "Перевод другим",
+    "Другое",
 ]
 
 # CRITICAL: hardcoded current date so the LLM resolves relative dates correctly.
@@ -40,18 +41,19 @@ TODAY_STR = "2026-03-11"
 TODAY_HUMAN = "среда, 11 марта 2026 года"
 
 SYSTEM_PROMPT = (
-    f"Сегодня {TODAY_HUMAN}. "
+    f"Today is Wednesday, March 11, 2026. "
+    "If the user mentions 'yesterday', use 2026-03-10. "
+    "If the user mentions 'today', use 2026-03-11. "
     "Если пользователь говорит «вчера» — используй дату 2026-03-10. "
     "Если пользователь говорит «сегодня» — используй дату 2026-03-11. "
     "Дата ВСЕГДА в формате YYYY-MM-DD. "
-    "Ты — финансовый парсер. Верни ТОЛЬКО валидный JSON без каких-либо пояснений, "
-    "markdown-блоков или лишнего текста:\n"
+    "Ты — финансовый парсер. Верни ТОЛЬКО валидный JSON без пояснений и markdown:\n"
     '{"amount": float, "category": string, "description": string, "date": string}\n'
     "Поле description — краткое название товара, услуги или магазина (одна строка).\n"
-    f"Предпочтительные категории: {', '.join(KNOWN_CATEGORIES)}.\n"
-    "Если покупка не подходит ни к одной из них — придумай подходящую категорию на русском языке.\n"
+    f"Выбирай category ТОЛЬКО из этого списка: {', '.join(KNOWN_CATEGORIES)}.\n"
+    "Если покупка не подходит ни к одной категории — используй «Другое».\n"
     f"Если дата не указана — используй {TODAY_STR}.\n"
-    "Ответ должен быть валидным JSON и ничем больше."
+    "Ответ — валидный JSON и ничем больше."
 )
 
 
@@ -78,16 +80,15 @@ class ExpenseData(BaseModel):
     @field_validator("category")
     @classmethod
     def normalise_category(cls, v: str) -> str:
-        """Accept any non-empty string — the LLM may create new categories."""
         v = v.strip()
         if not v:
             return "Другое"
-        # Case-insensitive match against known categories to keep naming consistent.
+        # Case-insensitive match to keep casing consistent with Mini App.
         for known in KNOWN_CATEGORIES:
             if v.lower() == known.lower():
                 return known
-        logger.info("New category created by AI: '%s'", v)
-        return v
+        logger.warning("Unknown category '%s', falling back to 'Другое'", v)
+        return "Другое"
 
     @field_validator("description", mode="before")
     @classmethod
