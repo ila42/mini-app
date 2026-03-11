@@ -23,6 +23,8 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 
+from pydantic import ValidationError
+
 import database as db
 import ai_logic as ai
 from ai_logic import ExpenseData
@@ -151,6 +153,8 @@ async def handle_voice(message: Message) -> None:
         ogg_bytes = await bot.download_file(file.file_path)
         data = await ai.process_voice(ogg_bytes.read())
         await _process_and_reply(status, data, message.from_user.id)
+    except ValidationError:
+        await _safe_edit(status, "❓ Не смог распознать сумму. Скажи, например: «Продукты 1500 рублей»")
     except Exception as exc:
         logger.exception("Voice processing failed")
         await _safe_edit(status, f"❌ Не удалось обработать голосовое: {exc}")
@@ -170,6 +174,8 @@ async def handle_text(message: Message) -> None:
     try:
         data = await ai.process_text(text)
         await _process_and_reply(status, data, message.from_user.id)
+    except ValidationError:
+        await _safe_edit(status, "❓ Не смог распознать сумму. Напиши, например: «Продукты 1500 рублей»")
     except Exception as exc:
         logger.exception("Text processing failed")
         await _safe_edit(status, f"❌ Не удалось разобрать сообщение: {exc}")
@@ -188,6 +194,8 @@ async def handle_photo(message: Message) -> None:
         img_bytes = await bot.download_file(file.file_path)
         data = await ai.process_photo(img_bytes.read())
         await _process_and_reply(status, data, message.from_user.id)
+    except ValidationError:
+        await _safe_edit(status, "❓ Не смог распознать сумму на фото. Попробуй сфотографировать чётче или напиши вручную.")
     except Exception as exc:
         logger.exception("Photo processing failed")
         await _safe_edit(status, f"❌ Не удалось обработать фото: {exc}")
