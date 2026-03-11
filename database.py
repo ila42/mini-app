@@ -13,7 +13,7 @@ from datetime import date
 from dotenv import load_dotenv
 from supabase import acreate_client, AsyncClient
 
-load_dotenv()
+load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 

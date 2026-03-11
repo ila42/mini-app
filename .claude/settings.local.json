@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(rm MVP APP:*)"
+      "Bash(rm MVP APP:*)",
+      "Bash(cd \"C:/Users/lolni/OneDrive/Desktop/mini app\" && py -c \"\nfrom dotenv import load_dotenv\nimport os\nload_dotenv\\(\\)\nkey = os.environ.get\\('SUPABASE_KEY', 'NOT FOUND'\\)\nurl = os.environ.get\\('SUPABASE_URL', 'NOT FOUND'\\)\nprint\\('URL:', url\\)\nprint\\('Key length:', len\\(key\\)\\)\nprint\\('Key starts:', key[:20]\\)\nprint\\('Key ends:', repr\\(key[-20:]\\)\\)\nprint\\('Has spaces:', ' ' in key\\)\nprint\\('Has newline:', chr\\(10\\) in key\\)\n\")"
     ]
   }
 }
