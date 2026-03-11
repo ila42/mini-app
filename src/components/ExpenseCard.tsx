@@ -7,11 +7,20 @@ interface Props {
   onDelete: (id: string) => void
 }
 
+function formatDate(dateStr: string): string {
+  const today = new Date()
+  const todayStr = today.toISOString().slice(0, 10)
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+  const yesterdayStr = yesterday.toISOString().slice(0, 10)
+
+  if (dateStr === todayStr) return 'Сегодня'
+  if (dateStr === yesterdayStr) return 'Вчера'
+  return new Date(dateStr).toLocaleDateString('ru-RU', { month: 'short', day: 'numeric' })
+}
+
 export default function ExpenseCard({ expense, category, onDelete }: Props) {
-  const date = new Date(expense.date).toLocaleDateString('ru-RU', {
-    month: 'short',
-    day: 'numeric',
-  })
+  const date = formatDate(expense.date)
 
   return (
     <div
