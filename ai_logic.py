@@ -36,25 +36,27 @@ KNOWN_CATEGORIES = [
     "Другое",
 ]
 
-# CRITICAL: hardcoded current date so the LLM resolves relative dates correctly.
-TODAY_STR = "2026-03-11"
-TODAY_HUMAN = "среда, 11 марта 2026 года"
 
-SYSTEM_PROMPT = (
-    f"Today is Wednesday, March 11, 2026. "
-    "If the user mentions 'yesterday', use 2026-03-10. "
-    "If the user mentions 'today', use 2026-03-11. "
-    "Если пользователь говорит «вчера» — используй дату 2026-03-10. "
-    "Если пользователь говорит «сегодня» — используй дату 2026-03-11. "
-    "Дата ВСЕГДА в формате YYYY-MM-DD. "
-    "Ты — финансовый парсер. Верни ТОЛЬКО валидный JSON без пояснений и markdown:\n"
-    '{"amount": float, "category": string, "description": string, "date": string}\n'
-    "Поле description — краткое название товара, услуги или магазина (одна строка).\n"
-    f"Выбирай category ТОЛЬКО из этого списка: {', '.join(KNOWN_CATEGORIES)}.\n"
-    "Если покупка не подходит ни к одной категории — используй «Другое».\n"
-    f"Если дата не указана — используй {TODAY_STR}.\n"
-    "Ответ — валидный JSON и ничем больше."
-)
+def _build_system_prompt() -> str:
+    """Build system prompt with the current date so relative dates resolve correctly."""
+    from datetime import date, timedelta
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    return (
+        f"Today is {today.strftime('%A, %B %-d, %Y')}. "
+        f"If the user mentions 'yesterday', use {yesterday.isoformat()}. "
+        f"If the user mentions 'today', use {today.isoformat()}. "
+        f"Если пользователь говорит «вчера» — используй дату {yesterday.isoformat()}. "
+        f"Если пользователь говорит «сегодня» — используй дату {today.isoformat()}. "
+        "Дата ВСЕГДА в формате YYYY-MM-DD. "
+        "Ты — финансовый парсер. Верни ТОЛЬКО валидный JSON без пояснений и markdown:\n"
+        '{"amount": float, "category": string, "description": string, "date": string}\n'
+        "Поле description — краткое название товара, услуги или магазина (одна строка).\n"
+        f"Выбирай category ТОЛЬКО из этого списка: {', '.join(KNOWN_CATEGORIES)}.\n"
+        "Если покупка не подходит ни к одной категории — используй «Другое».\n"
+        f"Если дата не указана — используй {today.isoformat()}.\n"
+        "Ответ — валидный JSON и ничем больше."
+    )
 
 
 # ─────────────────────────────────────────────
@@ -65,13 +67,13 @@ class ExpenseData(BaseModel):
     amount: float = Field(..., gt=0, description="Total expense amount")
     category: str = Field(..., min_length=1)
     description: str = Field(default="")
-    date: str = Field(default=TODAY_STR)
+    date: str = Field(default_factory=lambda: __import__('datetime').date.today().isoformat())
 
     @field_validator("date")
     @classmethod
     def validate_date(cls, v: str) -> str:
         if not v or not v.strip():
-            return TODAY_STR
+            return __import__('datetime').date.today().isoformat()
         clean = v.strip()
         if len(clean) > 10:
             clean = clean[:10]
@@ -120,7 +122,7 @@ async def _parse_with_gpt(user_text: str) -> ExpenseData:
     response = await client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": _build_system_prompt()},
             {"role": "user", "content": user_text},
         ],
         temperature=0,
@@ -179,7 +181,7 @@ async def process_photo(image_bytes: bytes) -> ExpenseData:
     response = await client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": _build_system_prompt()},
             {
                 "role": "user",
                 "content": [
