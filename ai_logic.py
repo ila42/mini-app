@@ -139,24 +139,16 @@ async def _parse_with_gpt(user_text: str) -> ExpenseData:
 async def process_voice(ogg_bytes: bytes) -> ExpenseData:
     """
     1. Write .ogg bytes to a temp file.
-    2. Convert to .mp3 with pydub (requires ffmpeg in PATH).
-    3. Transcribe with Whisper.
-    4. Extract structured data with GPT-4o-mini.
+    2. Send directly to Whisper (supports OGG natively — no pydub/ffmpeg needed).
+    3. Extract structured data with GPT-4o-mini.
     """
-    import pydub
-
     with tempfile.TemporaryDirectory() as tmp:
         ogg_path = os.path.join(tmp, "voice.ogg")
-        mp3_path = os.path.join(tmp, "voice.mp3")
 
         with open(ogg_path, "wb") as f:
             f.write(ogg_bytes)
 
-        audio = pydub.AudioSegment.from_ogg(ogg_path)
-        audio.export(mp3_path, format="mp3")
-        logger.info("Voice converted: ogg→mp3 (%d bytes)", len(ogg_bytes))
-
-        with open(mp3_path, "rb") as audio_file:
+        with open(ogg_path, "rb") as audio_file:
             transcript = await client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio_file,

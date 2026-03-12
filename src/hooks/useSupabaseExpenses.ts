@@ -13,10 +13,15 @@ interface SupabaseRow {
 
 function getTelegramUserId(): number | null {
   try {
-    return (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id ?? null
+    const id = (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id
+    if (id) return id
   } catch {
-    return null
+    // ignore
   }
+  // Dev fallback: set VITE_DEV_USER_ID in .env for testing outside Telegram
+  const devId = import.meta.env.VITE_DEV_USER_ID
+  if (devId) return Number(devId)
+  return null
 }
 
 function mapRow(row: SupabaseRow, categories: Category[]): Expense {
@@ -124,8 +129,9 @@ export function useSupabaseExpenses(categories: Category[]) {
       category: catName,
     })
     if (error) throw error
-    // Realtime INSERT event will add the row to state automatically
-  }, [userId])
+    // Refetch to ensure UI is in sync (Realtime may not be enabled on this table)
+    await fetchExpenses()
+  }, [userId, fetchExpenses])
 
   const deleteExpense = useCallback(async (id: string) => {
     if (!supabase) return
