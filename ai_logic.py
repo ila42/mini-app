@@ -43,7 +43,7 @@ def _build_system_prompt() -> str:
     today = date.today()
     yesterday = today - timedelta(days=1)
     return (
-        f"Today is {today.strftime('%A, %B %-d, %Y')}. "
+        f"Today is {today.strftime('%A, %B {d}, %Y').format(d=today.day)}. "
         f"If the user mentions 'yesterday', use {yesterday.isoformat()}. "
         f"If the user mentions 'today', use {today.isoformat()}. "
         f"Если пользователь говорит «вчера» — используй дату {yesterday.isoformat()}. "
